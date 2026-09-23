@@ -1,0 +1,56 @@
+name: Check upstream samba release
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compare with upstream and open an issue if behind
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version() { sed -nE 's/^version: *"?([^"]+)"?$/\1/p'; }
+
+          upstream=$(curl -fsSL https://raw.githubusercontent.com/home-assistant/addons/master/samba/config.yaml | version)
+          current=$(version < samba_dual_user/config.yaml)
+          base=${current%-du.*}
+          echo "Upstream: ${upstream} / fork base: ${base} (${current})"
+
+          [[ -n "$upstream" ]] || { echo "::error::Could not read upstream version"; exit 1; }
+          [[ "$upstream" == "$base" ]] && exit 0
+
+          title="Upstream samba ${upstream} available (fork based on ${base})"
+          if gh issue list --state open --search "in:title \"Upstream samba ${upstream} available\"" --json number --jq '.[].number' | grep -q .; then
+            echo "Issue already open for ${upstream}"
+            exit 0
+          fi
+
+          gh issue create --title "$title" --body "$(cat <<EOF
+          The official Home Assistant samba add-on is at **${upstream}**; this fork is based on **${base}** (\`${current}\`).
+
+          Changelog: https://github.com/home-assistant/addons/blob/master/samba/CHANGELOG.md
+
+          To upgrade:
+
+          \`\`\`bash
+          git pull
+          scripts/upgrade.sh
+          git diff   # review
+          git add -A && git commit -m "Rebase onto upstream samba ${upstream}"
+          git push
+          \`\`\`
+
+          Close this issue once pushed.
+          EOF
+          )"

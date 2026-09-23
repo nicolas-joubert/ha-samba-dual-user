@@ -1,0 +1,213 @@
+diff --git a/samba_dual_user/DOCS.md b/samba_dual_user/DOCS.md
+index 80be4ec..7e4f7f2 100644
+--- a/samba_dual_user/DOCS.md
++++ b/samba_dual_user/DOCS.md
+@@ -81,6 +81,18 @@ The username you would like to use to authenticate with the Samba server.
+ 
+ The password that goes with the username configured for authentication.
+ 
++### Option: `ro_username` (optional)
++
++A second account that can read, but never write to or delete from, every enabled
++share (Samba enforces it via `read list`). Useful for automated consumers such as
++backup jobs. Must differ from `username`. Leave empty to disable it; the app then
++behaves exactly like the official Samba share app.
++
++### Option: `ro_password` (optional)
++
++The password that goes with the read-only username. The read-only account is only
++created when both `ro_username` and `ro_password` are set.
++
+ ### Option: `workgroup` (required)
+ 
+ Change WORKGROUP to reflect your network needs.
+diff --git a/samba_dual_user/config.yaml b/samba_dual_user/config.yaml
+index a1854f2..2f9105c 100644
+--- a/samba_dual_user/config.yaml
++++ b/samba_dual_user/config.yaml
+@@ -53,6 +53,8 @@ schema:
+   username: str
+   password: password
+   workgroup: str
++  ro_username: str?
++  ro_password: password?
+   enabled_shares:
+     - "match(^(?i:(local_apps|app_configs|addons|addon_configs|backup|config|media|share|ssl))$)"
+   compatibility_mode: bool
+diff --git a/samba_dual_user/rootfs/etc/s6-overlay/s6-rc.d/init-smbd/run b/samba_dual_user/rootfs/etc/s6-overlay/s6-rc.d/init-smbd/run
+index 28e4633..157df1e 100755
+--- a/samba_dual_user/rootfs/etc/s6-overlay/s6-rc.d/init-smbd/run
++++ b/samba_dual_user/rootfs/etc/s6-overlay/s6-rc.d/init-smbd/run
+@@ -8,6 +8,8 @@ declare password
+ declare username
+ declare config_username
+ declare samba_username
++declare ro_username
++declare ro_password
+ declare stored_options
+ declare migration_payload
+ declare -a interfaces=()
+@@ -79,10 +81,17 @@ if [[ "${config_username}" =~ [[:space:]] ]]; then
+     } >/etc/samba/smbusers
+ fi
+ 
++ro_username=""
++if bashio::config.has_value 'ro_username'; then
++    ro_username=$(bashio::config 'ro_username' | tr '[:space:]' '_')
++fi
++
+ jq --arg username "${samba_username}" \
++    --arg ro_username "${ro_username}" \
+     ".interfaces = $(jq -c -n '$ARGS.positional' --args -- "${interfaces[@]}") |
+     .enabled_shares.[] |= ascii_downcase |
+-    .username = \$username" /data/options.json \
++    .username = \$username |
++    .ro_username = \$ro_username" /data/options.json \
+     | tempio \
+       -template /usr/share/tempio/smb.gtpl \
+       -out /etc/samba/smb.conf
+@@ -95,3 +104,12 @@ adduser -D -H -G "${username}" -s /bin/false "${username}"
+ 
+ (echo "$password"; echo "$password") \
+     | smbpasswd -a -s -c "/etc/samba/smb.conf" "${username}"
++
++# Init read-only user (optional second account, forced read-only on every share)
++if [[ -n "${ro_username}" ]] && bashio::config.has_value 'ro_password'; then
++    ro_password=$(bashio::config 'ro_password')
++    addgroup "${ro_username}"
++    adduser -D -H -G "${ro_username}" -s /bin/false "${ro_username}"
++    (echo "$ro_password"; echo "$ro_password") \
++        | smbpasswd -a -s -c "/etc/samba/smb.conf" "${ro_username}"
++fi
+diff --git a/samba_dual_user/rootfs/usr/share/tempio/smb.gtpl b/samba_dual_user/rootfs/usr/share/tempio/smb.gtpl
+index 9efcae8..91c5703 100644
+--- a/samba_dual_user/rootfs/usr/share/tempio/smb.gtpl
++++ b/samba_dual_user/rootfs/usr/share/tempio/smb.gtpl
+@@ -46,8 +46,9 @@
+    writeable = yes
+    path = /homeassistant
+ 
+-   valid users = {{ .username }}
+-   force user = root
++   valid users = {{ .username }}{{ if .ro_username }} {{ .ro_username }}{{ end }}
++{{ if .ro_username }}   read list = {{ .ro_username }}
++{{ end }}   force user = root
+    force group = root
+    veto files = /{{ .veto_files | join "/" }}/
+    delete veto files = {{ eq (len .veto_files) 0 | ternary "no" "yes" }}
+@@ -59,8 +60,9 @@
+    writeable = yes
+    path = /local_apps
+ 
+-   valid users = {{ .username }}
+-   force user = root
++   valid users = {{ .username }}{{ if .ro_username }} {{ .ro_username }}{{ end }}
++{{ if .ro_username }}   read list = {{ .ro_username }}
++{{ end }}   force user = root
+    force group = root
+    veto files = /{{ .veto_files | join "/" }}/
+    delete veto files = {{ eq (len .veto_files) 0 | ternary "no" "yes" }}
+@@ -73,8 +75,9 @@
+    path = /local_apps
+    preexec = /usr/bin/logger -s -t smbd -p local0.warning "%u connected to deprecated share %S from %m (%I), please switch to the local_apps share"
+ 
+-   valid users = {{ .username }}
+-   force user = root
++   valid users = {{ .username }}{{ if .ro_username }} {{ .ro_username }}{{ end }}
++{{ if .ro_username }}   read list = {{ .ro_username }}
++{{ end }}   force user = root
+    force group = root
+    veto files = /{{ .veto_files | join "/" }}/
+    delete veto files = {{ eq (len .veto_files) 0 | ternary "no" "yes" }}
+@@ -86,8 +89,9 @@
+    writeable = yes
+    path = /app_configs
+ 
+-   valid users = {{ .username }}
+-   force user = root
++   valid users = {{ .username }}{{ if .ro_username }} {{ .ro_username }}{{ end }}
++{{ if .ro_username }}   read list = {{ .ro_username }}
++{{ end }}   force user = root
+    force group = root
+    veto files = /{{ .veto_files | join "/" }}/
+    delete veto files = {{ eq (len .veto_files) 0 | ternary "no" "yes" }}
+@@ -100,8 +104,9 @@
+    path = /app_configs
+    preexec = /usr/bin/logger -s -t smbd -p local0.warning "%u connected to deprecated share %S from %m (%I), please switch to the app_configs share"
+ 
+-   valid users = {{ .username }}
+-   force user = root
++   valid users = {{ .username }}{{ if .ro_username }} {{ .ro_username }}{{ end }}
++{{ if .ro_username }}   read list = {{ .ro_username }}
++{{ end }}   force user = root
+    force group = root
+    veto files = /{{ .veto_files | join "/" }}/
+    delete veto files = {{ eq (len .veto_files) 0 | ternary "no" "yes" }}
+@@ -113,8 +118,9 @@
+    writeable = yes
+    path = /ssl
+ 
+-   valid users = {{ .username }}
+-   force user = root
++   valid users = {{ .username }}{{ if .ro_username }} {{ .ro_username }}{{ end }}
++{{ if .ro_username }}   read list = {{ .ro_username }}
++{{ end }}   force user = root
+    force group = root
+    veto files = /{{ .veto_files | join "/" }}/
+    delete veto files = {{ eq (len .veto_files) 0 | ternary "no" "yes" }}
+@@ -126,8 +132,9 @@
+    writeable = yes
+    path = /share
+ 
+-   valid users = {{ .username }}
+-   force user = root
++   valid users = {{ .username }}{{ if .ro_username }} {{ .ro_username }}{{ end }}
++{{ if .ro_username }}   read list = {{ .ro_username }}
++{{ end }}   force user = root
+    force group = root
+    veto files = /{{ .veto_files | join "/" }}/
+    delete veto files = {{ eq (len .veto_files) 0 | ternary "no" "yes" }}
+@@ -139,8 +146,9 @@
+    writeable = yes
+    path = /backup
+ 
+-   valid users = {{ .username }}
+-   force user = root
++   valid users = {{ .username }}{{ if .ro_username }} {{ .ro_username }}{{ end }}
++{{ if .ro_username }}   read list = {{ .ro_username }}
++{{ end }}   force user = root
+    force group = root
+    kernel oplocks = no
+    veto files = /{{ .veto_files | join "/" }}/
+@@ -153,8 +161,9 @@
+    writeable = yes
+    path = /media
+ 
+-   valid users = {{ .username }}
+-   force user = root
++   valid users = {{ .username }}{{ if .ro_username }} {{ .ro_username }}{{ end }}
++{{ if .ro_username }}   read list = {{ .ro_username }}
++{{ end }}   force user = root
+    force group = root
+    kernel oplocks = no
+    veto files = /{{ .veto_files | join "/" }}/
+diff --git a/samba_dual_user/translations/en.yaml b/samba_dual_user/translations/en.yaml
+index 1fa6c1e..6345c50 100644
+--- a/samba_dual_user/translations/en.yaml
++++ b/samba_dual_user/translations/en.yaml
+@@ -8,6 +8,15 @@ configuration:
+     name: Password
+     description: >-
+       The password that goes with the username configured for authentication.
++  ro_username:
++    name: Read-only username
++    description: >-
++      Optional second account, read-only on every enabled share.
++      Must differ from the main username. Leave empty to disable it.
++  ro_password:
++    name: Read-only password
++    description: >-
++      The password that goes with the read-only username.
+   workgroup:
+     name: Workgroup
+     description: Change WORKGROUP to reflect your network needs.
