@@ -22,7 +22,7 @@ jobs:
           set -euo pipefail
           version() { sed -nE 's/^version: *"?([^"]+)"?$/\1/p'; }
 
-          upstream=$(curl -fsSL https://raw.githubusercontent.com/home-assistant/addons/master/samba/config.yaml | version)
+          upstream=$(curl -fsSL https://raw.githubusercontent.com/home-assistant/apps/master/samba/config.yaml | version)
           current=$(version < samba_dual_user/config.yaml)
           base=${current%-du.*}
           echo "Upstream: ${upstream} / fork base: ${base} (${current})"
@@ -39,7 +39,7 @@ jobs:
           gh issue create --title "$title" --body "$(cat <<EOF
           The official Home Assistant samba add-on is at **${upstream}**; this fork is based on **${base}** (\`${current}\`).
 
-          Changelog: https://github.com/home-assistant/addons/blob/master/samba/CHANGELOG.md
+          Changelog: https://github.com/home-assistant/apps/blob/master/samba/CHANGELOG.md
 
           To upgrade:
 

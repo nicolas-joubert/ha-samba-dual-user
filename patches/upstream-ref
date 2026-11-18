@@ -1,1 +1,4 @@
-ceb80015bed5531ff15b969457804f6cf91eef47
+# Upstream snapshot samba_dual_user/ is based on (written by scripts/upgrade.sh).
+version=12.11.0
+app_samba=aedcc750ee69c1a7c72ff830676204a3131381e8
+apps=e8d88a19ac87d0ccbd1e0df63178e0e7a08caed3

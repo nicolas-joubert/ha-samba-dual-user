@@ -1,5 +1,5 @@
 ---
-version: 12.10.0-du.1
+version: 12.11.0-du.1
 slug: samba_dual_user
 name: Samba share (dual user)
 description: Expose Home Assistant folders with SMB/CIFS, with an extra read-only account
@@ -10,6 +10,7 @@ arch:
 hassio_api: true
 host_network: true
 init: false
+log_format: timestamp
 map:
   - local_apps:rw
   - all_app_configs:rw

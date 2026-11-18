@@ -88,10 +88,11 @@ fi
 
 jq --arg username "${samba_username}" \
     --arg ro_username "${ro_username}" \
-    ".interfaces = $(jq -c -n '$ARGS.positional' --args -- "${interfaces[@]}") |
+    --argjson interfaces "$(jq -c -n '$ARGS.positional' --args -- "${interfaces[@]}")" \
+    '.interfaces = $interfaces |
     .enabled_shares.[] |= ascii_downcase |
-    .username = \$username |
-    .ro_username = \$ro_username" /data/options.json \
+    .username = $username |
+    .ro_username = $ro_username' /data/options.json \
     | tempio \
       -template /usr/share/tempio/smb.gtpl \
       -out /etc/samba/smb.conf
@@ -102,7 +103,7 @@ password=$(bashio::config 'password')
 addgroup "${username}"
 adduser -D -H -G "${username}" -s /bin/false "${username}"
 
-(echo "$password"; echo "$password") \
+printf '%s\n%s\n' "${password}" "${password}" \
     | smbpasswd -a -s -c "/etc/samba/smb.conf" "${username}"
 
 # Init read-only user (optional second account, forced read-only on every share)
@@ -110,6 +111,6 @@ if [[ -n "${ro_username}" ]] && bashio::config.has_value 'ro_password'; then
     ro_password=$(bashio::config 'ro_password')
     addgroup "${ro_username}"
     adduser -D -H -G "${ro_username}" -s /bin/false "${ro_username}"
-    (echo "$ro_password"; echo "$ro_password") \
+    printf '%s\n%s\n' "${ro_password}" "${ro_password}" \
         | smbpasswd -a -s -c "/etc/samba/smb.conf" "${ro_username}"
 fi

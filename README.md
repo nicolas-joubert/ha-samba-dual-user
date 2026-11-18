@@ -1,11 +1,11 @@
 # Samba share (dual user) — Home Assistant add-on
 
-Fork of the official [Home Assistant Samba share add-on](https://github.com/home-assistant/addons/tree/master/samba),
+Fork of the official [Home Assistant Samba share add-on](https://github.com/home-assistant/app-samba),
 adding a second, **read-only** account on top of the existing read/write one — so an
 automated consumer (e.g. a backup job) can never write to or delete Home
 Assistant's live data, even by mistake.
 
-Based on upstream `samba` add-on version `12.10.0`. Everything else is upstream
+Based on upstream `samba` add-on version `12.11.0`. Everything else is upstream
 unchanged; the only intentional differences are the ~70 lines in
 `patches/dual-user.patch` plus the rebranding in `config.yaml` (slug, name,
 description, url, no `image:`).
@@ -42,18 +42,22 @@ repository when upstream publishes a new version, so there is no need to watch
 upstream by hand.
 
 ```bash
-scripts/upgrade.sh            # or: scripts/upgrade.sh <upstream-commit-sha>
+scripts/upgrade.sh            # or: scripts/upgrade.sh <upstream-version-tag>, e.g. 12.11.0
 git diff                      # review before trusting it
 git add -A && git commit -m "Rebase onto upstream samba <version>"
 git push
 ```
 
-The script fetches upstream `samba/`, replaces the whole `samba_dual_user/` directory
-with it (so `build.yaml`, `CHANGELOG.md`, `DOCS.md`, translations and icons stay
-identical to the official add-on), redoes the fork's rebranding in
+The script fetches upstream `samba/` from
+[`home-assistant/app-samba`](https://github.com/home-assistant/app-samba) at the
+release tag (latest by default), plus `samba/CHANGELOG.md` from
+[`home-assistant/apps`](https://github.com/home-assistant/apps) (the changelog is only
+published there, cut down to that version and older), replaces the whole
+`samba_dual_user/` directory with it (so `Dockerfile`, `CHANGELOG.md`, `DOCS.md`,
+translations and icons stay identical to the official add-on), redoes the fork's rebranding in
 `config.yaml` (slug, name, description, url, no `image:`, version
 `<new-upstream-version>-du.1`), re-applies `patches/dual-user.patch`, then regenerates
-that patch (and records the upstream commit in `patches/upstream-ref`) so it stays
+that patch (and records the upstream version and commits in `patches/upstream-ref`) so it stays
 truthful. It refuses to run on uncommitted changes and does nothing if already based
 on the latest upstream version (`--force` overrides both).
 
@@ -62,8 +66,7 @@ leaves `.rej` files next to the affected files. Re-apply their intent by hand �
 patch only ever: adds `ro_username`/`ro_password` to the config schema, adds the
 read-only account to each share's `valid users` plus a conditional `read list` line,
 creates that account in `init-smbd/run`, and documents both options in
-`translations/en.yaml` and `DOCS.md` — delete the `.rej` files, then run the `scripts/upgrade.sh --regen-patch <sha>` command
-the script printed.
+`translations/en.yaml` and `DOCS.md` — delete the `.rej` files, then run `scripts/upgrade.sh --regen-patch`.
 
 ## What this fork deliberately does NOT do
 
